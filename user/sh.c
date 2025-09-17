@@ -3,6 +3,7 @@
 #include "kernel/types.h"
 #include "user/user.h"
 #include "kernel/fcntl.h"
+#include "kernel/stat.h"
 
 // Parsed command representation
 #define EXEC 1
@@ -12,6 +13,10 @@
 #define BACK 5
 
 #define MAXARGS 10
+#define MAX_BG_JOBS 10 // Maximum number of background jobs
+
+int bg_pids[MAX_BG_JOBS]; // PIDs of background jobs
+int bg_count = 0;         // Number of background jobs
 
 struct cmd
 {
@@ -142,7 +147,13 @@ void runcmd(struct cmd *cmd)
 
 int getcmd(char *buf, int nbuf)
 {
-  write(2, "$ ", 2);
+  // check that stdin is a terminal
+  struct stat st;
+  if (fstat(0, &st) >= 0 && st.type == T_DEVICE && st.dev == 1)
+  {
+    write(2, "$ ", 2);
+  }
+
   memset(buf, 0, nbuf);
   gets(buf, nbuf);
   if (buf[0] == 0) // EOF
@@ -154,6 +165,7 @@ int main(void)
 {
   static char buf[100];
   int fd;
+  int background = 0;
 
   // Ensure that three file descriptors are open.
   while ((fd = open("console", O_RDWR)) >= 0)
@@ -168,6 +180,17 @@ int main(void)
   // Read and run input commands.
   while (getcmd(buf, sizeof(buf)) >= 0)
   {
+    background = 0;
+
+    // check for '&' indicating background job
+    int len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '&')
+    {
+      background = 1;
+      buf[len - 1] = '\0'; // Remove '&' from command
+    }
+
+    // built-in command: cd
     if (buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' ')
     {
       // Chdir must be called by the parent, not the child.
@@ -176,10 +199,41 @@ int main(void)
         fprintf(2, "cannot cd %s\n", buf + 3);
       continue;
     }
-    if (fork1() == 0)
+
+    // built-in command: wait
+    if (strcmp(buf, "wait") == 0 || strcmp(buf, "wait\n") == 0)
+    {
+      for (int i = 0; i < bg_count; i++)
+      {
+        if (bg_pids[i] > 0)
+        {
+          waitpid(bg_pids[i], 0);
+          bg_pids[i] = 0; // Clear the PID after waiting
+        }
+      }
+      bg_count = 0; // Reset background job count
+      continue;
+    }
+
+    int pid = fork1();
+    if (pid == 0)
       runcmd(parsecmd(buf));
-    wait(0);
+
+    if (!background)
+    {
+      wait(0); // Wait for foreground job to finish
+    }
+    else
+    {
+      // Background job: store its PID
+      if (bg_count < MAX_BG_JOBS)
+      {
+        bg_pids[bg_count++] = pid;
+        printf("[%d] %d\n", bg_count, pid);
+      }
+    }
   }
+
   exit(0);
 }
 
