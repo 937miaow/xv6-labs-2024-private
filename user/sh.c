@@ -15,8 +15,7 @@
 #define MAXARGS 10
 #define MAX_BG_JOBS 10 // Maximum number of background jobs
 
-int bg_pids[MAX_BG_JOBS]; // PIDs of background jobs
-int bg_count = 0;         // Number of background jobs
+int bg_count = 0; // Number of background jobs
 
 struct cmd
 {
@@ -184,10 +183,10 @@ int main(void)
 
     // check for '&' indicating background job
     int len = strlen(buf);
-    if (len > 0 && buf[len - 1] == '&')
+    if (len > 0 && buf[len - 2] == '&') // '&' is before '\0', due to gets()
     {
       background = 1;
-      buf[len - 1] = '\0'; // Remove '&' from command
+      buf[len - 2] = '\0'; // Remove '&' from command
     }
 
     // built-in command: cd
@@ -203,15 +202,9 @@ int main(void)
     // built-in command: wait
     if (strcmp(buf, "wait") == 0 || strcmp(buf, "wait\n") == 0)
     {
-      for (int i = 0; i < bg_count; i++)
-      {
-        if (bg_pids[i] > 0)
-        {
-          waitpid(bg_pids[i], 0);
-          bg_pids[i] = 0; // Clear the PID after waiting
-        }
-      }
-      bg_count = 0; // Reset background job count
+      while (wait(0) >= 0)
+        ;
+      bg_count = 0; // Reset background job count after waiting
       continue;
     }
 
@@ -228,7 +221,7 @@ int main(void)
       // Background job: store its PID
       if (bg_count < MAX_BG_JOBS)
       {
-        bg_pids[bg_count++] = pid;
+        bg_count++;
         printf("[%d] %d\n", bg_count, pid);
       }
     }
