@@ -26,9 +26,11 @@ int uptime(void);
 // ulib.c
 int stat(const char *, struct stat *);
 char *strcpy(char *, const char *);
+char *strncpy(char *, const char *, int);
 void *memmove(void *, const void *, int);
 char *strchr(const char *, char c);
 int strcmp(const char *, const char *);
+int strncmp(const char *, const char *, uint);
 void fprintf(int, const char *, ...) __attribute__((format(printf, 2, 3)));
 void printf(const char *, ...) __attribute__((format(printf, 1, 2)));
 char *gets(char *, int max);
