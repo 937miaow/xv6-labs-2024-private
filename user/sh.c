@@ -158,7 +158,7 @@ int getcmd(char *buf, int nbuf)
   struct stat st;
   if (fstat(0, &st) >= 0 && st.type == T_DEVICE && st.dev == 1)
   {
-    write(2, "$ ", 2);
+    write(2, "hhh937@xv6$ ", 12);
   }
 
   memset(buf, 0, nbuf);
