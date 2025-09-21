@@ -168,3 +168,14 @@ memcpy(void *dst, const void *src, uint n)
 {
   return memmove(dst, src, n);
 }
+
+char *strncat(char *dest, const char *src, long unsigned int n)
+{
+  char *rdest = dest;
+  while (*dest)
+    dest++;
+  while (n-- > 0 && (*dest++ = *src++) != 0)
+    ;
+  *dest = 0;
+  return rdest;
+}
