@@ -18,12 +18,21 @@
 int bg_count = 0; // Number of background jobs
 
 char *available_commands[] = {
-    "cat", "cd", "echo", "forktest", "grep", "init", "kill", "ln",
+    "cat", "cd", "clear", "echo", "forktest", "grep", "init", "kill", "ln",
     "ls", "mkdir", "rm", "rmdir", "sh", "stressfs", "usertests",
     "wc", "zombie", "wait", "exit", "pwd", "sleep", "uptime"};
 #define NUM_COMMANDS (sizeof(available_commands) / sizeof(available_commands[0]))
 
 void tab_completion(char *, int *, int);
+
+#define HISTORY_FILE ".sh_history" // define history file name
+#define MAX_HISTORY 20             // maximum number of history entries
+#define ESC 27                     // ASCII code for <Escape> key
+
+// History storage
+char history[MAX_HISTORY][100]; // circular buffer for history
+int history_count = 0;          // total commands in history
+int history_pos = 0;            // current position in history
 
 struct cmd
 {
@@ -152,6 +161,22 @@ void runcmd(struct cmd *cmd)
   exit(0);
 }
 
+void show_history_cmd(char *buf, int *index)
+{
+  // clear current line
+  for (int i = 0; i < *index; i++)
+  {
+    write(2, "\b \b", 3);
+  }
+
+  // copy history command to buffer
+  strcpy(buf, history[history_pos]);
+  *index = strlen(buf);
+
+  // display the command
+  write(2, buf, *index);
+}
+
 int getcmd(char *buf, int nbuf)
 {
   // check that stdin is a terminal
@@ -198,6 +223,44 @@ int getcmd(char *buf, int nbuf)
       }
       break;
 
+    case ESC:
+      // handle <escape> sequences (e.g., arrow keys)
+      // read two more chars
+      if (read(0, &c, 1) == 1 && c == '[')
+      {
+        if (read(0, &c, 1) == 1)
+        {
+          if (c == 'A') // up arrow
+          {
+            if (history_pos > 0)
+            {
+              history_pos--;
+              show_history_cmd(buf, &i);
+            }
+          }
+          else if (c == 'B') // down arrow
+          {
+            if (history_pos < history_count)
+            {
+              history_pos++;
+              if (history_pos == history_count)
+              {
+                // clear line if at end of history
+                for (int j = 0; j < i; j++)
+                  write(2, "\b \b", 3);
+                i = 0;
+                buf[0] = '\0';
+              }
+              else
+              {
+                show_history_cmd(buf, &i);
+              }
+            }
+          }
+        }
+      }
+      break;
+
     default:
       // other control characters
       if (c >= ' ' && c <= '~')
@@ -226,6 +289,37 @@ int main(void)
   static char buf[100];
   int fd;
   int background = 0;
+
+  // --- load the history ---
+  if ((fd = open(HISTORY_FILE, O_RDONLY)) >= 0)
+  {
+    char line_buf[100];
+    int line_len = 0;
+    char c;
+
+    // Read file character by character
+    while (read(fd, &c, 1) == 1 && history_count < MAX_HISTORY)
+    {
+      if (c == '\n')
+      {
+        // End of a line
+        if (line_len > 0)
+        {
+          line_buf[line_len] = '\0';
+          strcpy(history[history_count], line_buf);
+          history_count++;
+          line_len = 0;
+        }
+      }
+      else if (line_len < sizeof(line_buf) - 1)
+      {
+        line_buf[line_len++] = c;
+      }
+    }
+    close(fd);
+  }
+  history_pos = history_count; // Set position to end of history
+  // --- load the history end ---
 
   // Ensure that three file descriptors are open.
   while ((fd = open("console", O_RDWR)) >= 0)
@@ -268,6 +362,36 @@ int main(void)
       bg_count = 0; // Reset background job count after waiting
       continue;
     }
+
+    // ignore empty lines
+    if (buf[0] == '\n')
+    {
+      continue;
+    }
+
+    // --- save history ---
+    // save to history if not duplicate of last command
+    if (history_count == 0 || strcmp(history[history_count - 1], buf) != 0)
+    {
+      if (history_count < MAX_HISTORY)
+      {
+        strcpy(history[history_count], buf);
+        history_count++;
+      }
+
+      // write history to file
+      if ((fd = open(HISTORY_FILE, O_WRONLY | O_CREATE | O_TRUNC)) >= 0)
+      {
+        for (int i = 0; i < history_count; i++)
+        {
+          write(fd, history[i], strlen(history[i]));
+          write(fd, "\n", 1);
+        }
+        close(fd);
+      }
+    }
+    history_pos = history_count; // reset position to end of history
+    // --- save history end ---
 
     int pid = fork1();
     if (pid == 0)
