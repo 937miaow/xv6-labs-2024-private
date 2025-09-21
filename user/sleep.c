@@ -11,11 +11,10 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    if (strcmp(argv[1], "--help") == 0) // help message
+    if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h")) // help message
     {
-        fprintf(1, "Usage: sleep ticks\n"
-                   "Pause execution for a specified number of clock ticks.\n"
-                   "Example: sleep 100 (sleeps for 100 clock ticks)\n");
+        fprintf(1, "Usage: sleep <ticks>\n"
+                   "Pause execution for a specified number of clock ticks.\n");
         exit(1);
     }
 
