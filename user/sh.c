@@ -17,6 +17,14 @@
 
 int bg_count = 0; // Number of background jobs
 
+char *available_commands[] = {
+    "cat", "cd", "echo", "forktest", "grep", "init", "kill", "ln",
+    "ls", "mkdir", "rm", "rmdir", "sh", "stressfs", "usertests",
+    "wc", "zombie", "wait", "exit", "pwd", "sleep", "uptime"};
+#define NUM_COMMANDS (sizeof(available_commands) / sizeof(available_commands[0]))
+
+void tab_completion(char *, int *, int);
+
 struct cmd
 {
   int type;
@@ -154,9 +162,62 @@ int getcmd(char *buf, int nbuf)
   }
 
   memset(buf, 0, nbuf);
-  gets(buf, nbuf);
-  if (buf[0] == 0) // EOF
+
+  int i = 0;
+  char c;
+  while (i < nbuf - 1)
+  {
+    if (read(0, &c, 1) != 1)
+    {
+      break;
+    }
+
+    // fprintf(2, "[DEBUG: char_code=%d]\n", c);
+
+    switch (c)
+    {
+    case '\n':
+    case '\r':
+      // handle <newline>/<return> characters
+      buf[i] = '\0';
+      write(2, "\n", 1); // ensure newline after command
+      return 0;
+
+    case '\t':
+      // handle <tab> input
+      tab_completion(buf, &i, nbuf);
+      break; // break switch, continue while loop
+
+    case '\b':
+    case 127:
+      // handle <backspace>
+      if (i > 0)
+      {
+        i--;
+        write(2, "\b \b", 3); // erase character from terminal
+      }
+      break;
+
+    default:
+      // other control characters
+      if (c >= ' ' && c <= '~')
+      {
+        buf[i++] = c;
+        write(2, &c, 1); // echo character
+      }
+      break;
+    }
+  }
+
+  if (i == 0) // EOF or error
     return -1;
+
+  // buffer full
+  if (i == nbuf - 1)
+  {
+    buf[i] = '\0';
+  }
+
   return 0;
 }
 
@@ -183,7 +244,7 @@ int main(void)
 
     // check for '&' indicating background job
     int len = strlen(buf);
-    if (len > 0 && buf[len - 2] == '&') // '&' is before '\0', due to gets()
+    if (len > 0 && buf[len - 2] == '&') // '&' is before '\0'
     {
       background = 1;
       buf[len - 2] = '\0'; // Remove '&' from command
@@ -555,4 +616,99 @@ nulterminate(struct cmd *cmd)
     break;
   }
   return cmd;
+}
+
+void tab_completion(char *buf, int *index, int nbuf)
+{
+  char current_word[100];
+  int word_start = 0;
+  int word_len = 0;
+
+  // Find the start of the current word
+  for (int i = *index - 1; i >= 0; i--)
+  {
+    if (buf[i] == ' ' || i == 0)
+    {
+      word_start = (buf[i] == ' ') ? i + 1 : i;
+      break;
+    }
+  }
+  word_len = *index - word_start;
+
+  // if no current word, list all commands
+  if (word_len == 0)
+  {
+    write(2, "\n", 1);
+    for (int i = 0; i < NUM_COMMANDS; i++)
+    {
+      fprintf(2, "%s  ", available_commands[i]);
+      if ((i + 1) % 5 == 0)
+        write(2, "\n", 1); // New line after every 5 commands
+    }
+    write(2, "\n$ ", 3);
+    write(2, buf, *index);
+    return;
+  }
+
+  if (word_len >= sizeof(current_word) - 1)
+    return;
+
+  // Copy the current word
+  strncpy(current_word, buf + word_start, word_len);
+  current_word[word_len] = '\0';
+
+  // match current word with available commands
+  char *matches[100];
+  int match_cnt = 0;
+
+  for (int i = 0; i < NUM_COMMANDS; i++)
+  {
+    if (strncmp(available_commands[i], current_word, word_len) == 0)
+    {
+      matches[match_cnt++] = available_commands[i];
+    }
+  }
+
+  if (match_cnt == 0)
+  {
+    return;
+  }
+  else if (match_cnt == 1) // Single match: complete the command
+  {
+    char *match = matches[0];
+    int chars_to_add = strlen(match) - word_len;
+
+    if (*index + chars_to_add + 1 >= nbuf)
+    {
+      return;
+    }
+
+    // 1. Update the input buffer
+    strncat(buf, match + word_len, chars_to_add);
+    *index += chars_to_add;
+    buf[*index] = ' ';
+    (*index)++;
+    buf[*index] = '\0';
+
+    // 2. Update the terminal display
+    for (int i = 0; i < word_len; ++i)
+    {
+      write(2, "\b \b", 3);
+    }
+
+    write(2, match, strlen(match));
+    write(2, " ", 1);
+  }
+  else // Multiple matches: list them
+  {
+    write(2, "\n", 1);
+    for (int i = 0; i < match_cnt; i++)
+    {
+      fprintf(2, "%s  ", matches[i]);
+      if ((i + 1) % 6 == 0)
+        write(2, "\n", 1);
+    }
+    write(2, "\n$ ", 3);
+    write(2, buf, *index);
+  }
 }

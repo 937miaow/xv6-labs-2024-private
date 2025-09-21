@@ -142,6 +142,61 @@ int consoleread(int user_dst, uint64 dst, int n)
 // do erase/kill processing, append to cons.buf,
 // wake up consoleread() if a whole line has arrived.
 //
+// void consoleintr(int c)
+// {
+//   acquire(&cons.lock);
+
+//   switch (c)
+//   {
+//   case C('P'): // Print process list.
+//     procdump();
+//     break;
+//   case C('U'): // Kill line.
+//     while (cons.e != cons.w &&
+//            cons.buf[(cons.e - 1) % INPUT_BUF_SIZE] != '\n')
+//     {
+//       cons.e--;
+//       consputc(BACKSPACE);
+//     }
+//     break;
+//   case C('H'): // Backspace
+//   case '\x7f': // Delete key
+//     if (cons.e != cons.w)
+//     {
+//       cons.e--;
+//       consputc(BACKSPACE);
+//     }
+//     break;
+//   default:
+//     if (c != 0 && cons.e - cons.r < INPUT_BUF_SIZE)
+//     {
+//       c = (c == '\r') ? '\n' : c;
+
+//       // echo back to the user.
+//       consputc(c);
+
+//       // store for consumption by consoleread().
+//       cons.buf[cons.e++ % INPUT_BUF_SIZE] = c;
+
+//       if (c == '\n' || c == C('D') || cons.e - cons.r == INPUT_BUF_SIZE)
+//       {
+//         // wake up consoleread() if a whole line (or end-of-file)
+//         // has arrived.
+//         cons.w = cons.e;
+//         wakeup(&cons.r);
+//       }
+//     }
+//     break;
+//   }
+
+//   release(&cons.lock);
+// }
+
+// the console input interrupt handler.
+// uartintr() calls this for input character.
+// do erase/kill processing, append to cons.buf,
+// wake up consoleread() if a whole line has arrived.
+//
 void consoleintr(int c)
 {
   acquire(&cons.lock);
@@ -151,40 +206,23 @@ void consoleintr(int c)
   case C('P'): // Print process list.
     procdump();
     break;
-  case C('U'): // Kill line.
-    while (cons.e != cons.w &&
-           cons.buf[(cons.e - 1) % INPUT_BUF_SIZE] != '\n')
-    {
-      cons.e--;
-      consputc(BACKSPACE);
-    }
-    break;
-  case C('H'): // Backspace
-  case '\x7f': // Delete key
-    if (cons.e != cons.w)
-    {
-      cons.e--;
-      consputc(BACKSPACE);
-    }
-    break;
+
+    // We no longer handle C('U') (kill line) and C('H') (backspace) in the kernel.
+    // These characters will now be passed directly to the user-space shell.
+
   default:
     if (c != 0 && cons.e - cons.r < INPUT_BUF_SIZE)
     {
-      c = (c == '\r') ? '\n' : c;
+      c = (c == '\r') ? '\n' : c; // Still convert carriage return to newline.
 
-      // echo back to the user.
-      consputc(c);
+      // THE KERNEL NO LONGER ECHOES THE CHARACTER.
+      // consputc(c); // This line is commented out or removed.
 
-      // store for consumption by consoleread().
       cons.buf[cons.e++ % INPUT_BUF_SIZE] = c;
 
-      if (c == '\n' || c == C('D') || cons.e - cons.r == INPUT_BUF_SIZE)
-      {
-        // wake up consoleread() if a whole line (or end-of-file)
-        // has arrived.
-        cons.w = cons.e;
-        wakeup(&cons.r);
-      }
+      // Wake up consoleread() on EVERY character, not just on a newline.
+      cons.w = cons.e;
+      wakeup(&cons.r);
     }
     break;
   }
