@@ -26,3 +26,4 @@ barrier
 *.dSYM
 *.pcap
 book-riscv-rev4.pdf
+.Lab Report/
